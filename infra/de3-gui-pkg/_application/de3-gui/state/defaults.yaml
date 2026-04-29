@@ -1,0 +1,140 @@
+current:
+  menu:
+    appear_s_controls: true
+    appear_s_file: true
+    appear_s_infra: true
+    appear_s_layout: true
+    appear_s_networks: true
+    appear_s_params: true
+    appear_s_popup: false
+    appear_s_terminal: true
+    appear_s_theme: true
+    appear_s_wave: true
+    auto_select_recent_unit: true
+    browser_profile: playwright
+    config_data_quote_path: false
+    config_data_search_query: ''
+    cy_color_by_wave: false
+    cy_show_dependencies: true
+    cy_wheel_sensitivity: 0.3
+    depth_limit: 0
+    env_filters:
+      _none: true
+      dev: true
+      example: true
+    explorer_root: infra
+    explorer_search: ''
+    file_search_case_sensitive: false
+    file_search_smooth_scroll: false
+    file_viewer_mode: unit_file
+    file_viewer_render_markdown: true
+    file_viewer_show_line_numbers: false
+    float_file_viewer_open: true
+    float_fv_saved_x: ''
+    float_fv_saved_y: ''
+    float_object_viewer_open: true
+    float_ov_saved_x: ''
+    float_ov_saved_y: ''
+    float_term_saved_x: ''
+    float_term_saved_y: ''
+    float_terminal_open: true
+    floating_panels_mode: false
+    hide_provider_underscore_params: false
+    hide_special_params: false
+    left_view: tree
+    object_viewer_mode: waves
+    package_filters:
+      _none: false
+      aws-pkg: false
+      azure-pkg: false
+      de3-gui-pkg: false
+      _framework-pkg: false
+      demo-buckets-example-pkg: false
+      gcp-pkg: false
+      image-maker-pkg: false
+      maas-pkg: false
+      mesh-central-pkg: false
+      mikrotik-pkg: false
+      proxmox-pkg: false
+      pwy-home-lab-pkg: true
+      unifi-pkg: false
+    panel_show_depth: true
+    panel_show_merged: true
+    panel_show_view_selector: true
+    panel_width_pct: 45
+    param_wrap_values: true
+    providers:
+    - provider-name: proxmox
+      show: true
+    - provider-name: maas
+      show: true
+    - provider-name: unifi
+      show: true
+    - provider-name: gcp
+      show: true
+    - provider-name: aws
+      show: true
+    - provider-name: azure
+      show: true
+    - provider-name: 'null'
+      show: true
+    region_filters:
+      _none: true
+      eastus: true
+      example-lab: true
+      pwy-homelab: true
+      us-central1: true
+      us-east-1: true
+    resizer_drag_width: 13
+    selected_editor_id: ''
+    selected_node_path: ''
+    selected_roles: []
+    show_full_module_name: false
+    show_status_bar: true
+    show_unit_build_status: true
+    show_unit_popup: false
+    show_wave_numbers: true
+    terminal_backend: ttyd
+    terminal_hide_initial_cmd: true
+    top_row_height_pct: 45
+    tree_mode: separated
+    ui_theme: dark
+    unit_file_search_query: ''
+    unit_params_search: ''
+    unit_status_auto_refresh: false
+    unit_status_auto_refresh_secs: 30
+    viz_framework: reflex
+    wave_filters:
+      _none: true
+      cloud.k8s: true
+      cloud.storage: true
+      external.proxmox.isos-and-snippets: true
+      hypervisor.proxmox.configure: true
+      hypervisor.proxmox.install: true
+      hypervisor.proxmox.storage: true
+      local.updates: true
+      maas.lifecycle.allocated: true
+      maas.lifecycle.commissioning: true
+      maas.lifecycle.deployed: true
+      maas.lifecycle.deploying: true
+      maas.lifecycle.new: true
+      maas.lifecycle.ready: true
+      maas.machine.config.networking: true
+      maas.machine.config.power: true
+      maas.servers.all: true
+      maas.test.proxmox-vms: true
+      network.mikrotik: true
+      network.unifi: true
+      network.unifi.validate-config: true
+      vms.proxmox.custom-images.image-maker: true
+      vms.proxmox.from-kairos: true
+      vms.proxmox.from-packer: true
+      vms.proxmox.from-web.rocky: true
+      vms.proxmox.from-web.ubuntu: true
+      vms.proxmox.utility.mesh-central: true
+    wave_highlight_recent: true
+    wave_show_age: false
+    wave_show_duration: true
+    wave_show_end_time: false
+    wave_show_log_update: true
+    wave_show_start_time: false

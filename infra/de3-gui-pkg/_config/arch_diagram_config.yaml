@@ -1,0 +1,103 @@
+arch_diagram_config:
+  # Layout direction for swimlane arrangement: LR (left→right) or TB (top→bottom)
+  direction: LR
+
+  # Depth range for nested diagram layout.
+  # min_depth = outermost level shown (provider or env)
+  # max_depth = innermost level shown (leaf resources)
+  # 0 = package root, 1 = provider, 2 = env, 3 = group/folder, 4 = physical resource
+  min_depth: 2
+  max_depth: 4
+
+  # Whether to draw edges from the Terraform dependency graph.
+  # Only edges where both endpoints are at max_depth are drawn.
+  show_connections: true
+
+  # module_source_short → draw.io style fragment.
+  # Shape names reference draw.io's built-in stencil libraries; no external
+  # mxlibrary loading is needed — draw.io resolves stencils at open time.
+  # Use "*" suffix for prefix matching (e.g. "maas_lifecycle_*" matches any lifecycle module).
+  icon_map:
+    proxmox_virtual_environment_vm:            "shape=mxgraph.cisco.servers.virtual_machine;"
+    proxmox_virtual_environment_download_file: "shape=mxgraph.cisco.storage.cd_dvd_tape;"
+    proxmox_virtual_environment_file:          "shape=mxgraph.cisco.storage.cd_dvd_tape;"
+    maas_machine:                              "shape=mxgraph.cisco.servers.standard_server;"
+    "maas_lifecycle_*":                        "shape=mxgraph.cisco.servers.standard_server;"
+    maas_machine_release:                      "shape=mxgraph.cisco.servers.standard_server;"
+    unifi_device:                              "shape=mxgraph.cisco.switches.workgroup_switch;"
+    unifi_network:                             "shape=mxgraph.cisco.firewalls.firewall;"
+    unifi_port_profile:                        "shape=mxgraph.cisco.switches.workgroup_switch;"
+    routeros_switch:                           "shape=mxgraph.cisco.routers.router;"
+    aws_s3_bucket:      "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;"
+    aws_s3_object:      "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;"
+    google_container_cluster:     "shape=mxgraph.gcp2.kubernetes_engine;"
+    google_storage_bucket:        "shape=mxgraph.gcp2.cloud_storage;"
+    google_storage_bucket_object: "shape=mxgraph.gcp2.cloud_storage;"
+    azurerm_storage_container:    "shape=mxgraph.azure.storage;"
+    azurerm_storage_blob:         "shape=mxgraph.azure.storage;"
+    "null_resource__*":           "shape=mxgraph.cisco.servers.application_server;"
+
+  # Provider-level fallback when module_source_short has no entry in icon_map.
+  provider_icon_fallbacks:
+    proxmox: "shape=mxgraph.cisco.servers.standard_server;"
+    maas:    "shape=mxgraph.cisco.servers.standard_server;"
+    unifi:   "shape=mxgraph.cisco.switches.workgroup_switch;"
+    routeros: "shape=mxgraph.cisco.routers.router;"
+    gcp:    "shape=mxgraph.gcp2.cloud_generic;"
+    aws:    "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.general;"
+    azure:  "shape=mxgraph.azure.azure_generic;"
+    "null": "shape=mxgraph.cisco.servers.application_server;"
+
+  # Swimlane layer definitions.
+  # Each layer matches infra paths by prefix (first matching layer wins).
+  # At component_depth=1, paths look like "<pkg>/_stack/<provider>".
+  # Nodes that match no layer go to the implicit "Other" layer at the end.
+  layers:
+    - id: network
+      label: "Network"
+      color: "#EEF2FF"
+      stroke: "#4338CA"
+      order: 1
+      path_prefixes:
+        - pwy-home-lab-pkg/_stack/unifi
+        - pwy-home-lab-pkg/_stack/routeros
+        - mikrotik-pkg/_stack/routeros
+
+    - id: on_prem
+      label: "On-Premise Compute"
+      color: "#FFF7ED"
+      stroke: "#E07000"
+      order: 2
+      path_prefixes:
+        - pwy-home-lab-pkg/_stack/proxmox
+        - pwy-home-lab-pkg/_stack/maas
+
+    - id: orchestration
+      label: "Orchestration"
+      color: "#F0FDF4"
+      stroke: "#16A34A"
+      order: 3
+      path_prefixes:
+        - pwy-home-lab-pkg/_stack/null
+
+    - id: cloud
+      label: "Cloud"
+      color: "#EFF6FF"
+      stroke: "#4285F4"
+      order: 4
+      path_prefixes:
+        - pwy-home-lab-pkg/_stack/gcp
+        - pwy-home-lab-pkg/_stack/aws
+        - pwy-home-lab-pkg/_stack/azure
+        - gcp-pkg/_stack/gcp
+
+  # Styling overrides per provider (accent colour for component boxes).
+  provider_styles:
+    proxmox:  { color: "#E07000" }
+    maas:     { color: "#7C3AED" }
+    unifi:    { color: "#4338CA" }
+    routeros: { color: "#CC0000" }
+    gcp:      { color: "#4285F4" }
+    aws:      { color: "#FF9900" }
+    azure:    { color: "#0078D4" }
+    "null":   { color: "#6B7280" }

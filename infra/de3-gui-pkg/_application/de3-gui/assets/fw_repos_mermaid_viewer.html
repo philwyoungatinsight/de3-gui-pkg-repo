@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Framework Repos</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0f172a; color: #e2e8f0;
+      font-family: system-ui, -apple-system, sans-serif;
+      height: 100vh; overflow: hidden; margin: 0;
+    }
+    #diagram-wrap {
+      width: 100%; height: 100%; overflow: auto; padding: 24px;
+      display: flex; align-items: flex-start;
+      cursor: grab; user-select: none;
+      box-sizing: border-box;
+    }
+    #diagram-wrap.panning { cursor: grabbing; }
+    /* margin:auto on the flex child centers it when smaller than the container
+       and falls back to 0 when overflowing — fixes the flex+overflow left-clip bug. */
+    #diagram { margin: 0 auto; flex-shrink: 0; }
+    #diagram svg { max-width: none; display: block; }
+    #ctx-menu .ctx-item:hover { background: #334155; }
+    #ctx-menu .ctx-item.disabled { color: #475569; cursor: default; }
+    #ctx-menu .ctx-item.disabled:hover { background: transparent; }
+  </style>
+</head>
+<body>
+  <div id="diagram-wrap"><div id="diagram"></div></div>
+
+  <div id="ctx-menu" style="display:none; position:fixed; z-index:1000;
+    background:#1e293b; border:1px solid #334155; border-radius:6px;
+    padding:4px 0; min-width:240px;
+    box-shadow:0 4px 16px rgba(0,0,0,0.6);
+    font-size:13px; font-family:system-ui,-apple-system,sans-serif;">
+    <div id="ctx-git"    class="ctx-item" style="padding:8px 16px; cursor:pointer; color:#e2e8f0; white-space:nowrap;">Open Git URL</div>
+    <div id="ctx-fw-pkg" class="ctx-item" style="padding:8px 16px; cursor:pointer; color:#e2e8f0; white-space:nowrap;">Open framework_package_repositories.yaml</div>
+  </div>
+
+  <script>
+    var _repos = {};
+
+    function _initMermaid() {
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: 'dark',
+        securityLevel: 'loose',
+        themeVariables: { fontSize: '18px' }
+      });
+    }
+
+    _initMermaid();
+
+    function safeName(name) {
+      return name.replace(/[<>]/g, '').trim() || 'current-repo';
+    }
+
+    function buildMermaid(repos) {
+      var style = inaccessibleStyle();  // 'normal' | 'red' | 'black' | 'hide'
+
+      // 'hide': exclude repos probed and found unreachable
+      var allNames = Object.keys(repos);
+      var names = style === 'hide'
+        ? allNames.filter(function(n) { return repos[n].accessible !== false; })
+        : allNames;
+      var nameSet = {};
+      names.forEach(function(n) { nameSet[n] = true; });
+
+      var lines = ['classDiagram'];
+
+      // Define the inaccessible CSS class before any class nodes.
+      if (style === 'red' || style === 'black') {
+        var fill   = style === 'red' ? '#7f1d1d' : '#0f172a';
+        var stroke = style === 'red' ? '#ef4444' : '#1e293b';
+        var text   = style === 'red' ? '#fca5a5' : '#334155';
+        lines.push('    classDef _inacc fill:' + fill + ',stroke:' + stroke + ',color:' + text);
+      }
+
+      names.forEach(function(name) {
+        var r = repos[name];
+        var safe = safeName(name);
+        var isInacc = (style === 'red' || style === 'black') && r.accessible === false;
+
+        // Deduplicate packages by name across settings_dirs
+        var seen = {};
+        var pkgs = [];
+        (r.settings_dirs || []).forEach(function(d) {
+          (d.packages || []).forEach(function(p) {
+            if (!seen[p.name]) { seen[p.name] = true; pkgs.push(p); }
+          });
+        });
+
+        var pkgMode  = packagesMode();  // 'hide' | 'a-z' | 'from-code'
+        var embedded = pkgs.filter(function(p) { return p.package_type === 'embedded'; });
+        var external = pkgs.filter(function(p) { return p.package_type !== 'embedded'; });
+        if (pkgMode === 'a-z') {
+          var byName = function(a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; };
+          embedded = embedded.slice().sort(byName);
+          external = external.slice().sort(byName);
+        }
+
+        // :::_inacc inline — more reliable with backtick-quoted names than standalone `class` directive
+        lines.push('    class `' + safe + '`' + (isInacc ? ':::_inacc' : '') + ' {');
+        if (r.source) lines.push('        <<' + r.source + '>>');
+
+        var notes = r.notes || [];
+
+        // Truncate a content line so it never wraps inside the Mermaid node.
+        // Long text wraps with centered continuation (looks broken); clip instead.
+        function fitLine(s) { return s.length > 48 ? s.slice(0, 47) + '…' : s; }
+
+        // ── Git section ────────────────────────────────────────────────────
+        var gitLines = [];
+        if (gitMode() !== 'hide' && r.url) {
+          gitLines.push(fitLine('url: ' + shortUrl(r.url)));
+        }
+
+        // ── Main Package section ───────────────────────────────────────────
+        var cfgPkgLines = [];
+        if (configPkgMode() !== 'hide' && r.main_package) {
+          cfgPkgLines.push(fitLine(r.main_package));
+        }
+
+        // ── Labels section ─────────────────────────────────────────────────
+        var labelLines = [];
+        if (labelsMode() !== 'hide') {
+          (r.labels || []).forEach(function(lbl) {
+            if (lbl.name && lbl.value != null && lbl.value !== '') {
+              labelLines.push(fitLine(lbl.name + ': ' + lbl.value));
+            }
+          });
+        }
+
+        // ── Backend section ────────────────────────────────────────────────
+        var beMode  = backendMode();  // 'hide' | 'summary' | 'all'
+        var beLines = [];
+        if (beMode !== 'hide') {
+          var be = r.framework_backend || {};
+          if (be.type) {
+            var beCfg    = be.config || {};
+            var beBucket = beCfg.bucket || beCfg.container || '';
+            if (beMode === 'summary') {
+              beLines.push(fitLine(beBucket ? 'bucket: ' + beBucket : 'type: ' + be.type));
+            } else {
+              // 'all': type + every config key on its own labelled line.
+              beLines.push(fitLine('type: ' + be.type));
+              Object.keys(beCfg).forEach(function(k) {
+                beLines.push(fitLine(k + ': ' + beCfg[k]));
+              });
+            }
+          }
+        }
+
+        // ── Packages section ───────────────────────────────────────────────
+        var embSym = '◆ ';
+        var extSym = '◇ ';
+        var pkgLines = [];
+        if (pkgMode !== 'hide') {
+          embedded.forEach(function(p) {
+            var caps = p.provides_capability || [];
+            var ver = caps.length ? Object.values(caps[0])[0] : '';
+            pkgLines.push(fitLine(embSym + p.name + (ver ? ' : ' + ver : '')));
+          });
+          external.forEach(function(p) {
+            var caps = p.provides_capability || [];
+            var ver = caps.length ? Object.values(caps[0])[0] : '';
+            pkgLines.push(fitLine(extSym + p.name + (ver ? ' : ' + ver : '')));
+          });
+        }
+
+        var noteLines = [];
+        if (notes.length > 0) {
+          noteLines.push('notes()');
+          notes.forEach(function(note) { noteLines.push(fitLine('• ' + note) + '()'); });
+        }
+
+        function makeSep(label) {
+          return '── ' + label;
+        }
+
+        // ── emit ───────────────────────────────────────────────────────────
+        if (gitLines.length > 0) {
+          lines.push('        ' + makeSep('Git'));
+          gitLines.forEach(function(t) { lines.push('        ' + t); });
+        }
+
+        if (cfgPkgLines.length > 0) {
+          lines.push('        ' + makeSep('Main Package'));
+          cfgPkgLines.forEach(function(t) { lines.push('        ' + t); });
+        }
+
+        if (labelLines.length > 0) {
+          lines.push('        ' + makeSep('Labels'));
+          labelLines.forEach(function(t) { lines.push('        ' + t); });
+        }
+
+        if (beLines.length > 0) {
+          lines.push('        ' + makeSep('Backend'));
+          beLines.forEach(function(t) { lines.push('        ' + t); });
+        }
+
+        if (pkgLines.length > 0) {
+          lines.push('        ' + makeSep('Packages'));
+          pkgLines.forEach(function(t) { lines.push('        ' + t); });
+        }
+
+        // Notes in methods compartment — no separator; Mermaid renders methods
+        // in a visually distinct section automatically.
+        noteLines.forEach(function(t) { lines.push('        ' + t); });
+
+        lines.push('    }');
+      });
+
+      // "creates" arrows: creator --> created (arrowhead at the created end)
+      names.forEach(function(name) {
+        var r = repos[name];
+        if (r.created_by && nameSet[r.created_by]) {
+          lines.push('    `' + safeName(r.created_by) + '` --> `' + safeName(name) + '` : creates');
+        }
+      });
+
+      return lines.join('\n');
+    }
+
+    var _renderCount = 0;
+
+    function apiBase() {
+      var p = new URLSearchParams(window.location.search);
+      var port = p.get('backendPort');
+      if (!port) return '';
+      return window.location.protocol + '//' + window.location.hostname + ':' + port;
+    }
+
+    function gitMode() {
+      return new URLSearchParams(window.location.search).get('git') || 'show';
+    }
+
+    function configPkgMode() {
+      return new URLSearchParams(window.location.search).get('configPkg') || 'show';
+    }
+
+    function labelsMode() {
+      return new URLSearchParams(window.location.search).get('labels') || 'show';
+    }
+
+    function inaccessibleStyle() {
+      return new URLSearchParams(window.location.search).get('inaccessible') || 'normal';
+    }
+
+    function backendMode() {
+      return new URLSearchParams(window.location.search).get('backend') || 'hide';
+    }
+
+    function packagesMode() {
+      return new URLSearchParams(window.location.search).get('packages') || 'a-z';
+    }
+
+    function shortUrl(url) {
+      if (!url) return '';
+      return url.replace(/^https?:\/\//, '').replace(/\.git$/, '');
+    }
+
+    // ── Pan ──────────────────────────────────────────────────────────────────
+    (function() {
+      var wrap = document.getElementById('diagram-wrap');
+      var panning = false, sx, sy, sl, st;
+      wrap.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        panning = true; sx = e.clientX; sy = e.clientY;
+        sl = wrap.scrollLeft; st = wrap.scrollTop;
+        wrap.classList.add('panning');
+        e.preventDefault();
+      });
+      document.addEventListener('mousemove', function(e) {
+        if (!panning) return;
+        if (!(e.buttons & 1)) { panning = false; wrap.classList.remove('panning'); return; }
+        wrap.scrollLeft = sl - (e.clientX - sx);
+        wrap.scrollTop  = st - (e.clientY - sy);
+      });
+      document.addEventListener('mouseup', function() {
+        panning = false; wrap.classList.remove('panning');
+      });
+    })();
+
+    // ── Zoom ─────────────────────────────────────────────────────────────────
+    var _zoom = 1.0;
+    var _svgNatW = 0, _svgNatH = 0;
+
+    function _svgNaturalSize(svg) {
+      var vb = svg.getAttribute('viewBox');
+      if (vb) {
+        var p = vb.trim().split(/[\s,]+/);
+        if (p.length >= 4) return { w: parseFloat(p[2]), h: parseFloat(p[3]) };
+      }
+      var w = parseFloat(svg.getAttribute('width'));
+      var h = parseFloat(svg.getAttribute('height'));
+      if (w > 0 && h > 0) return { w: w, h: h };
+      var r = svg.getBoundingClientRect();
+      return { w: r.width, h: r.height };
+    }
+
+    function _initZoom() {
+      // Wait for the browser to lay out the SVG so getBoundingClientRect() is accurate.
+      // Using viewBox dimensions directly can differ from rendered size (Mermaid may
+      // scale the SVG), which would cause a surprise reflow and delayed scrollbars.
+      requestAnimationFrame(function() {
+        var svg = document.querySelector('#diagram svg');
+        if (!svg) return;
+        var rect = svg.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          _svgNatW = rect.width; _svgNatH = rect.height;
+        } else {
+          var sz = _svgNaturalSize(svg);
+          _svgNatW = sz.w; _svgNatH = sz.h;
+        }
+        var urlPct = parseInt(new URLSearchParams(window.location.search).get('zoom') || '100');
+        _zoom = Math.max(0.1, Math.min(64,urlPct / 100));
+        svg.style.width  = (_svgNatW * _zoom) + 'px';
+        svg.style.height = (_svgNatH * _zoom) + 'px';
+      });
+    }
+
+    function _applyZoom(newZoom, pivotClientX, pivotClientY) {
+      if (!_svgNatW) return;
+      var svg = document.querySelector('#diagram svg');
+      if (!svg) return;
+      var wrap = document.getElementById('diagram-wrap');
+      var wRect = wrap.getBoundingClientRect();
+      var px = pivotClientX - wRect.left;  // cursor inside scroll viewport
+      var py = pivotClientY - wRect.top;
+      // diagram coords under cursor at current zoom
+      var docX = (wrap.scrollLeft + px) / _zoom;
+      var docY = (wrap.scrollTop  + py) / _zoom;
+      _zoom = Math.max(0.1, Math.min(64,newZoom));
+      svg.style.width  = (_svgNatW * _zoom) + 'px';
+      svg.style.height = (_svgNatH * _zoom) + 'px';
+      // restore cursor position
+      wrap.scrollLeft = docX * _zoom - px;
+      wrap.scrollTop  = docY * _zoom - py;
+    }
+
+    document.getElementById('diagram-wrap').addEventListener('wheel', function(e) {
+      e.preventDefault();
+      var factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+      _applyZoom(_zoom * factor, e.clientX, e.clientY);
+    }, { passive: false });
+
+    // double-click resets zoom to 1
+    document.getElementById('diagram-wrap').addEventListener('dblclick', function() {
+      var wrap = document.getElementById('diagram-wrap');
+      _applyZoom(1.0, wrap.getBoundingClientRect().left + wrap.clientWidth / 2,
+                      wrap.getBoundingClientRect().top  + wrap.clientHeight / 2);
+    });
+
+    // ── Context menu ─────────────────────────────────────────────────────────────
+    var _ctxTarget = null;
+
+    function _toBrowseUrl(url) {
+      if (!url) return '';
+      return url.replace(/^git@([^:]+):(.+)$/, 'https://$1/$2').replace(/\.git$/, '');
+    }
+
+    function showContextMenu(x, y, name, data) {
+      _ctxTarget = {name: name, data: data};
+      var hasUrl   = !!data.url;
+      var hasFwPkg = hasUrl && !!data.main_package;
+
+      var gitItem = document.getElementById('ctx-git');
+      var fwItem  = document.getElementById('ctx-fw-pkg');
+      gitItem.classList.toggle('disabled', !hasUrl);
+      fwItem.classList.toggle('disabled', !hasFwPkg);
+
+      var menu = document.getElementById('ctx-menu');
+      menu.style.display = 'block';
+      // Clamp to viewport so the menu never clips off-screen
+      var mw = menu.offsetWidth, mh = menu.offsetHeight;
+      menu.style.left = Math.min(x, window.innerWidth  - mw - 8) + 'px';
+      menu.style.top  = Math.min(y, window.innerHeight - mh - 8) + 'px';
+    }
+
+    function hideContextMenu() {
+      document.getElementById('ctx-menu').style.display = 'none';
+      _ctxTarget = null;
+    }
+
+    document.getElementById('ctx-git').addEventListener('click', function() {
+      if (!_ctxTarget || !_ctxTarget.data.url) return;
+      window.open(_toBrowseUrl(_ctxTarget.data.url), '_blank');
+      hideContextMenu();
+    });
+
+    document.getElementById('ctx-fw-pkg').addEventListener('click', function() {
+      if (!_ctxTarget || !_ctxTarget.data.url || !_ctxTarget.data.main_package) return;
+      var base = _toBrowseUrl(_ctxTarget.data.url);
+      var pkg  = _ctxTarget.data.main_package;
+      var path = 'infra/' + pkg + '/_config/_framework_settings/framework_package_repositories.yaml';
+      var url  = base.indexOf('gitlab') !== -1
+        ? base + '/-/blob/main/' + path
+        : base + '/blob/main/' + path;
+      window.open(url, '_blank');
+      hideContextMenu();
+    });
+
+    // Dismiss on click outside the menu or on Escape
+    document.addEventListener('click', function(e) {
+      if (!e.target.closest('#ctx-menu')) hideContextMenu();
+    });
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') hideContextMenu();
+    });
+
+    function attachContextMenuHandlers(repos) {
+      var svgEl = document.querySelector('#diagram svg');
+      if (!svgEl) return;
+
+      var nameMap = {};
+      Object.keys(repos).forEach(function(name) {
+        nameMap[safeName(name)] = {name: name, data: repos[name]};
+      });
+
+      // Search an element's subtree for a leaf whose text matches a repo name.
+      // Mermaid 11 renders class diagram text in <foreignObject>…<p> chains,
+      // not in SVG <text> elements — so we search <p>, <text>, and <tspan>.
+      function repoForNode(el) {
+        var nodes = el.querySelectorAll('p, text, tspan');
+        for (var i = 0; i < nodes.length; i++) {
+          if (nodes[i].childElementCount > 0) continue;
+          var t = (nodes[i].textContent || '').trim();
+          if (nameMap[t]) return nameMap[t];
+        }
+        return null;
+      }
+
+      // Single delegated handler on the SVG.
+      // Mermaid 11 class node groups have IDs containing "classId-" (capital I,
+      // prefixed with the SVG element's own id, e.g. "my-svg-classId-repo-name-0").
+      svgEl.addEventListener('contextmenu', function(e) {
+        var el = e.target;
+        while (el && el !== svgEl) {
+          if ((el.tagName === 'g' || el.tagName === 'G') && /classId-/.test(el.id || '')) {
+            var repo = repoForNode(el);
+            if (repo) {
+              e.preventDefault();
+              e.stopPropagation();
+              showContextMenu(e.clientX, e.clientY, repo.name, repo.data);
+            }
+            return;
+          }
+          el = el.parentElement;
+        }
+      });
+    }
+
+    async function _renderDiagram() {
+      if (Object.keys(_repos).length === 0) return;
+      var defn = buildMermaid(_repos);
+      var id = 'fw-repos-' + (++_renderCount);
+      var result = await mermaid.render(id, defn);
+      document.getElementById('diagram').innerHTML = result.svg;
+      _initZoom();
+      attachContextMenuHandlers(_repos);
+    }
+
+    async function load() {
+      try {
+        var resp = await fetch(apiBase() + '/api/fw-repos-graph');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        var data = await resp.json();
+        _repos = data.repos || {};
+
+        if (Object.keys(_repos).length === 0) {
+          document.getElementById('diagram').innerHTML =
+            '<p style="color:#64748b;margin-top:40px;">No repos found. ' +
+            'Run fw-repos-diagram-exporter --list first.</p>';
+          return;
+        }
+
+        _initMermaid();
+        await _renderDiagram();
+      } catch(e) {
+        document.getElementById('diagram').innerHTML =
+          '<p style="color:#ef4444;margin-top:40px;">Error: ' + e.message + '</p>';
+        console.error(e);
+      }
+    }
+
+
+    load();
+  </script>
+</body>
+</html>

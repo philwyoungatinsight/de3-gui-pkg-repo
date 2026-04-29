@@ -1,0 +1,76 @@
+#!/bin/bash
+# de3-gui-pkg setup — install Python/Node.js dependencies for the Home Lab GUI.
+# Run this once before `make run` or `./run --run` from the application directory.
+
+set -euo pipefail
+
+GIT_ROOT="$(git rev-parse --show-toplevel)"
+. "$GIT_ROOT/set_env.sh"
+
+APP_DIR="$_INFRA_DIR/de3-gui-pkg/_application/de3-gui"
+_INSTALL_REQS="$_UTILITIES_DIR/python/install-requirements.sh"
+
+# ── helpers ────────────────────────────────────────────────────────────────────
+
+_has_brew() { command -v brew >/dev/null 2>&1; }
+_is_debian() { [ -f /etc/debian_version ]; }
+_has_dnf()   { command -v dnf >/dev/null 2>&1; }
+
+# ── python3 ───────────────────────────────────────────────────────────────────
+
+_setup_python3() {
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "  python3 not found — running _framework-pkg setup to install prerequisites..."
+        "$GIT_ROOT/infra/_framework-pkg/_setup/run"
+    fi
+    echo "  python3: $(python3 --version 2>&1)"
+}
+
+# ── node ──────────────────────────────────────────────────────────────────────
+# Reflex requires Node.js 18+.
+
+_node_major() {
+    node --version 2>/dev/null | tr -d 'v' | cut -d. -f1
+}
+
+_setup_node() {
+    if command -v node >/dev/null 2>&1 && [[ "$(_node_major)" -ge 18 ]]; then
+        echo "  node: $(node --version)"
+        return
+    fi
+    if command -v node >/dev/null 2>&1; then
+        echo "  node $(node --version) is too old (need 18+) — upgrading..."
+    else
+        echo "==> Installing Node.js 18+..."
+    fi
+
+    if _has_brew; then
+        brew install node
+    else
+        # Install via nvm — works on any Linux/macOS without root.
+        # The de3-gui run script already uses nvm (_load_nvm), so this is
+        # consistent with how the app loads node at runtime.
+        local nvm_dir="${NVM_DIR:-$HOME/.nvm}"
+        if [[ ! -s "${nvm_dir}/nvm.sh" ]]; then
+            echo "  Installing nvm..."
+            curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+        fi
+        # shellcheck source=/dev/null
+        . "${nvm_dir}/nvm.sh"
+        nvm install --lts
+        nvm use --lts
+    fi
+    echo "  node installed: $(node --version)"
+}
+
+# ── main ───────────────────────────────────────────────────────────────────────
+
+echo "=== de3-gui-pkg setup ==="
+_setup_python3
+_setup_node
+
+echo "  Installing Python dependencies..."
+"$_INSTALL_REQS" "$APP_DIR/requirements.txt"
+
+echo "=== de3-gui-pkg setup complete ==="
+echo "  Start the GUI: cd $APP_DIR && ./run --run"

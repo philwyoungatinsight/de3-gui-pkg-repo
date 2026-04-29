@@ -1,0 +1,9 @@
+assets/external/
+.web
+__pycache__/
+*.py[cod]
+.states
+*.db
+state/.test_state.yml
+state/current.yaml
+homelab_gui/ttyd_index_patched.html

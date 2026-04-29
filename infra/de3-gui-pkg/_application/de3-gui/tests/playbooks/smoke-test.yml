@@ -1,0 +1,106 @@
+---
+# Smoke test — verify the GUI is reachable and shows infra packages.
+#
+# Checks:
+#   1. Frontend (Next.js) responds at port HOMELAB_GUI_FRONTEND_PORT (default 9080)
+#   2. Backend API responds at port HOMELAB_GUI_BACKEND_PORT (default 9000)
+#   3. /api/infra-graph returns at least one provider and at least one node
+#   4. Browser test: opens the GUI, confirms no connection error, stays for
+#      observation_timeout_secs seconds (configured in de3-gui-pkg.yaml)
+#
+# Usage (app must already be running):
+#   cd tests/
+#   ansible-playbook playbooks/smoke-test.yml
+
+- name: "GUI smoke test — API checks"
+  hosts: localhost
+  gather_facts: false
+  vars:
+    gui_app_url: "http://localhost:{{ lookup('env', 'HOMELAB_GUI_FRONTEND_PORT') | default('9080', true) }}"
+    gui_api_url: "http://localhost:{{ lookup('env', 'HOMELAB_GUI_BACKEND_PORT')  | default('9000', true) }}"
+
+  tasks:
+    - name: "Frontend is reachable"
+      ansible.builtin.uri:
+        url: "{{ gui_app_url }}"
+        method: GET
+        status_code: 200
+        timeout: 15
+
+    - name: "Fetch infra graph from backend"
+      ansible.builtin.uri:
+        url: "{{ gui_api_url }}/api/infra-graph"
+        method: GET
+        status_code: 200
+        timeout: 15
+      register: _graph
+
+    - name: "Infra packages show up in the graph"
+      ansible.builtin.assert:
+        that:
+          - _graph.json.providers is defined
+          - _graph.json.providers | length > 0
+          - _graph.json.elements is defined
+          - _graph.json.elements | length > 0
+        success_msg: >
+          OK — {{ _graph.json.elements | length }} nodes,
+          providers: {{ _graph.json.providers | join(', ') }}
+        fail_msg: >
+          Graph returned no providers or no nodes.
+          providers={{ _graph.json.providers | default([]) }},
+          elements={{ _graph.json.elements | default([]) | length }}
+
+    # Save config for the browser play below.
+    - name: "Load de3-gui-pkg config"
+      ansible.builtin.set_fact:
+        _pkg_config_file: >-
+          {{ lookup('pipe', 'git rev-parse --show-toplevel') }}/infra/de3-gui-pkg/_config/de3-gui-pkg.yaml
+
+    - name: "Read de3-gui-pkg.yaml"
+      ansible.builtin.include_vars:
+        file: "{{ _pkg_config_file }}"
+        name: _pkg_cfg_raw
+
+    - name: "Expose ui_testing settings"
+      ansible.builtin.set_fact:
+        _ui_testing: "{{ _pkg_cfg_raw['de3-gui-pkg']['testing']['ui_testing'] }}"
+        _ui_colors: "{{ _pkg_cfg_raw['de3-gui-pkg']['testing']['ui_testing']['colors'] }}"
+
+- name: "GUI smoke test — browser check"
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: "Run browser test (opens GUI, checks no connection error)"
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../browser_test.py"
+          - "--url"
+          - "http://localhost:8080"
+          - "--check"
+          - "no_element:Connection Error"
+          - "--headless"
+          - "{{ hostvars['localhost']['_ui_testing']['headless'] | string | lower }}"
+          - "--observation-mode"
+          - "{{ hostvars['localhost']['_ui_testing']['observation_mode'] }}"
+          - "--observation-timeout"
+          - "{{ hostvars['localhost']['_ui_testing']['observation_timeout_secs'] | string }}"
+          - "--post-continue-pause"
+          - "{{ hostvars['localhost']['_ui_testing']['post_continue_pause_secs'] | string }}"
+          - "--tint-waiting"
+          - "{{ hostvars['localhost']['_ui_colors']['tint_waiting'] }}"
+          - "--tint-fail"
+          - "{{ hostvars['localhost']['_ui_colors']['tint_fail'] }}"
+          - "--btn-running"
+          - "{{ hostvars['localhost']['_ui_colors']['btn_running'] }}"
+          - "--btn-pass"
+          - "{{ hostvars['localhost']['_ui_colors']['btn_pass'] }}"
+          - "--btn-fail"
+          - "{{ hostvars['localhost']['_ui_colors']['btn_fail'] }}"
+      register: _browser_result
+      changed_when: false
+
+    - name: "Browser test output"
+      ansible.builtin.debug:
+        msg: "{{ _browser_result.stdout_lines }}"

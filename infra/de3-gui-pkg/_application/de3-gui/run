@@ -1,0 +1,324 @@
+#!/usr/bin/env bash
+# run — install and manage the Home Lab GUI (Python Reflex app)
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Save the caller's _GIT_ROOT before sourcing set_env.sh overwrites it.
+# When this script is run from a deployment repo that sourced its own set_env.sh first,
+# _GIT_ROOT is that deployment repo's root.  After `. set_env.sh` below it becomes
+# this script's physical git root (de3-runner), so we must capture it first.
+_CALLER_GIT_ROOT="${_GIT_ROOT:-}"
+
+# Source repo-level set_env.sh (sets _GIT_ROOT, _INFRA_DIR, _DYNAMIC_DIR, etc.)
+GIT_ROOT="$(git rev-parse --show-toplevel)"
+. "$GIT_ROOT/set_env.sh"
+
+# _STACK_DIR = deployment repo root (the repo whose state file the GUI should read).
+# Use the caller's git root if it was already set; fall back to this script's git root.
+export _STACK_DIR="${_CALLER_GIT_ROOT:-$_GIT_ROOT}"
+
+# Package config under _INFRA_DIR.
+PKG_CONFIG_FILE="$_CONFIG_DIR/de3-gui-pkg.yaml"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+_log() { echo "[install-de-gui] $*"; }
+_die() { echo "[install-de-gui] ERROR: $*" >&2; exit 1; }
+
+_check_python() {
+    command -v python3 &>/dev/null || _die "python3 is required but not found"
+}
+
+_load_nvm() {
+    # Load NVM so the managed Node.js (>=18) is on PATH in non-interactive shells.
+    # Skipped if `node` is already >=18 (e.g. system package or pre-loaded NVM).
+    if [[ -s "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ]]; then
+        # shellcheck source=/dev/null
+        . "${NVM_DIR:-$HOME/.nvm}/nvm.sh" --no-use
+        # Use the default/alias version if present.
+        nvm use default 2>/dev/null || true
+    fi
+}
+
+_check_node() {
+    _load_nvm
+    command -v node &>/dev/null || _die "node is required by Reflex but not found. Install Node.js 18+."
+    local node_major
+    node_major=$(node --version | sed 's/v\([0-9]*\).*/\1/')
+    if [[ "$node_major" -lt 18 ]]; then
+        _die "Node.js >=18 required (found $(node --version)). Load NVM or upgrade your system Node."
+    fi
+    # Give Node.js enough heap to compile the large JSX bundle without OOM.
+    export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=4096}"
+}
+
+# Read a dotted key from de3-gui-pkg.yaml.
+# Config is under the "de3-gui-pkg:" top-level key, so "config.vm_ip" resolves
+# de3-gui-pkg.yaml → de3-gui-pkg.config.vm_ip.
+# Usage: _read_config <key> [default]
+# Example: _read_config config.vm_ip localhost
+_read_config() {
+    local key="$1"
+    local default="${2:-}"
+    "$SCRIPT_DIR/.venv/bin/python3" - "$PKG_CONFIG_FILE" "de3-gui-pkg.$key" "$default" <<'PYEOF'
+import sys, yaml
+config_file, key, default = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    with open(config_file) as fh:
+        cfg = yaml.safe_load(fh) or {}
+except Exception:
+    cfg = {}
+parts = key.split(".")
+val = cfg
+for p in parts:
+    if isinstance(val, dict):
+        val = val.get(p)
+    else:
+        val = None
+        break
+print(val if val is not None else default)
+PYEOF
+}
+
+# Set up venv + install requirements before any python3 call (e.g. _read_config needs PyYAML).
+# shellcheck source=/dev/null
+. "$_UTILITIES_DIR/bash/init.sh"
+_activate_python_locally "$SCRIPT_DIR"
+
+# Read ports from config (must come after _read_config is defined and PKG_CONFIG_FILE is set).
+APP_PORT=$(_read_config "config.frontend_port" "9080")
+BACKEND_PORT=$(_read_config "config.backend_port" "9000")
+# Export so rxconfig.py can read them via os.environ.
+export HOMELAB_GUI_FRONTEND_PORT="$APP_PORT"
+export HOMELAB_GUI_BACKEND_PORT="$BACKEND_PORT"
+
+# Find a usable browser binary (Chrome/Chromium first, then system defaults).
+_find_browser() {
+    for bin in google-chrome google-chrome-stable chromium-browser chromium; do
+        if command -v "$bin" &>/dev/null; then
+            echo "$bin"
+            return 0
+        fi
+    done
+    # Fallback: xdg-open (Linux) or open (macOS)
+    if command -v xdg-open &>/dev/null; then
+        echo "xdg-open"
+        return 0
+    fi
+    if command -v open &>/dev/null; then
+        echo "open"
+        return 0
+    fi
+    echo ""
+}
+
+# Open a URL in the best available browser.
+_open_url() {
+    local url="$1"
+    local browser
+    browser=$(_find_browser)
+    if [[ -z "$browser" ]]; then
+        _log "No browser found. Open manually: $url"
+        return 0
+    fi
+    _log "Opening $url in $browser"
+    "$browser" "$url" &>/dev/null &
+}
+
+# ---------------------------------------------------------------------------
+# Actions
+# ---------------------------------------------------------------------------
+
+_deps() {
+    _log "Dependencies installed (venv + requirements handled at startup)."
+}
+
+_build() {
+    _log "Initialising Reflex app..."
+    _check_python
+    _check_node
+    cd "$SCRIPT_DIR"
+    reflex init
+    _log "Build complete."
+}
+
+_stop() {
+    _log "Stopping any running Home Lab GUI instances (ports ${APP_PORT} and ${BACKEND_PORT})..."
+    # Gracefully terminate the reflex parent (children die with it)
+    pkill -TERM -f "reflex run" 2>/dev/null || true
+    sleep 2
+    # Force-kill anything still holding either port
+    for _port in "${APP_PORT}" "${BACKEND_PORT}"; do
+        _pids=$(lsof -ti "tcp:${_port}" 2>/dev/null || true)
+        if [[ -n "${_pids}" ]]; then
+            _log "Force-killing PID(s) still on port ${_port}: $(echo "${_pids}" | tr '\n' ' ')"
+            echo "${_pids}" | xargs kill -9 2>/dev/null || true
+        fi
+    done
+    # Remove the cross-process test-state marker so stale markers don't suppress
+    # on_load re-initialization in the next test run.
+    rm -f "${_GUI_DIR}/test-applied" 2>/dev/null || true
+    _log "Stop complete."
+}
+
+_run() {
+    _log "Starting Home Lab GUI at http://localhost:${APP_PORT} ..."
+    _check_python
+    _check_node
+    cd "$SCRIPT_DIR"
+    # Exclude tests/ from hot-reload watching so editing test files doesn't
+    # trigger a backend restart while a test run is in progress.
+    export REFLEX_HOT_RELOAD_EXCLUDE_PATHS="$SCRIPT_DIR/tests"
+    reflex run
+}
+
+_test() {
+    _check_python
+    _check_node   # also loads NVM and sets NODE_OPTIONS
+
+    local vm_ip
+    vm_ip=$(_read_config "config.vm_ip" "localhost")
+    local backend_url="http://${vm_ip}:${BACKEND_PORT}"
+    local frontend_url="http://${vm_ip}:${APP_PORT}"
+    local tests_dir="$SCRIPT_DIR/tests"
+
+    # Exclude tests/ from hot-reload so editing test files doesn't trigger
+    # a backend restart while the test is running.
+    export REFLEX_HOT_RELOAD_EXCLUDE_PATHS="$SCRIPT_DIR/tests"
+
+    # Start the app in background if the backend is not already running.
+    local _started_app=false
+    if ! curl -sf --max-time 2 "$backend_url/api/infra-graph" &>/dev/null; then
+        _log "App not running — starting in background..."
+        cd "$SCRIPT_DIR"
+        [[ -z "${_GUI_DIR:-}" ]] && _die "_GUI_DIR is not set — source set_env.sh before running"
+        reflex run > "${_GUI_DIR}/reflex-homelab-gui.log" 2>&1 &
+        _started_app=true
+    fi
+
+    # Wait up to 180s for the backend API.
+    # First start compiles the Next.js bundle (slow, especially with a large JSX file).
+    _log "Waiting for backend API at $backend_url ..."
+    local ok=false
+    for i in $(seq 1 180); do
+        if curl -sf --max-time 2 "$backend_url/api/infra-graph" &>/dev/null; then
+            ok=true
+            break
+        fi
+        sleep 1
+    done
+    if [[ "$ok" == false ]]; then
+        _die "Backend API not responding at $backend_url after 180s. See ${_GUI_DIR}/reflex-homelab-gui.log"
+    fi
+    _log "Backend API is UP."
+
+    # Wait up to 60s for the frontend to serve the HTML page.
+    _log "Waiting for frontend at $frontend_url ..."
+    ok=false
+    for i in $(seq 1 60); do
+        if curl -sf --max-time 2 "$frontend_url" &>/dev/null; then
+            ok=true
+            break
+        fi
+        sleep 1
+    done
+    if [[ "$ok" == false ]]; then
+        _die "Frontend not responding at $frontend_url after 60s. See ${_GUI_DIR}/reflex-homelab-gui.log"
+    fi
+    _log "Frontend is UP at $frontend_url"
+
+    _log "App is fully ready. Running smoke test..."
+
+    # Run Ansible-based smoke test.
+    local test_rc=0
+    if command -v ansible-playbook &>/dev/null; then
+        (cd "$tests_dir" && ./run --test) || test_rc=$?
+    else
+        _die "ansible-playbook not found. Run: pip install ansible-core"
+    fi
+
+    # Stop the app only if we started it (don't interfere with a dev session).
+    if [[ "$_started_app" == true ]]; then
+        _log "Stopping app (started for this test run)..."
+        _stop
+    fi
+
+    [[ $test_rc -eq 0 ]] || _die "Tests FAILED"
+    _log "Tests PASSED"
+    _log "OK"
+}
+
+_status() {
+    local vm_ip
+    vm_ip=$(_read_config "config.vm_ip" "localhost")
+    local url="http://${vm_ip}:${APP_PORT}"
+    _log "Checking $url ..."
+    if curl -sf --max-time 3 "$url" &>/dev/null; then
+        _log "App is UP at $url"
+    else
+        _log "App is NOT running (no response at $url)"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+function show_usage()
+{
+    printf "Usage: $0 <command> [<command> ...]\n"
+    cat <<EOF
+    -d|--deps
+    -b|--build
+    -r|--run
+    -t|--test
+    -c|--clean
+    -s|--status
+    -h|--help
+
+    Example:
+      $0 -c -b -r
+EOF
+    exit 1
+}
+
+if [[ $# -lt 1 ]]; then
+    show_usage "$@"
+fi
+
+while [[ $# -gt 0 ]]; do
+    key="$1"
+    case $key in
+        -d|--deps)
+            shift
+            _deps
+            ;;
+        -b|--build)
+            shift
+            _deps && _build
+            ;;
+        -r|--run)
+            shift
+            _run
+            ;;
+        -t|--test)
+            shift
+            _test
+            ;;
+        -c|--clean|--stop)
+            shift
+            _stop
+            ;;
+        -s|--status)
+            shift
+            _status
+            ;;
+        -h|--help)
+            show_usage
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done

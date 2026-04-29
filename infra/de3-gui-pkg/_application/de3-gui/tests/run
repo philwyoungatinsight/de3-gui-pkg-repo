@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# run — execute the GUI smoke test.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+_log() { echo "[gui-tests] $*"; }
+_die() { echo "[gui-tests] ERROR: $*" >&2; exit 1; }
+
+_check_ansible() {
+    command -v ansible-playbook > /dev/null 2>&1 \
+        || _die "ansible-playbook not found. Run: pip install ansible-core"
+}
+
+# ---------------------------------------------------------------------------
+# Actions
+# ---------------------------------------------------------------------------
+
+_deps() {
+    _log "Installing test dependencies..."
+    command -v python3 > /dev/null 2>&1 || _die "python3 is required but not found"
+    python3 -m pip install --quiet --upgrade "ansible-core>=2.14" playwright
+    python3 -m playwright install chromium --quiet
+    _log "Dependencies installed."
+}
+
+_test() {
+    _check_ansible
+    _log "Running smoke test..."
+    ansible-playbook playbooks/smoke-test.yml
+    _log "Smoke test PASSED."
+}
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+usage() {
+    cat <<EOF
+Usage: ./run [OPTION]
+
+  --deps    Install test dependencies (ansible-core, playwright)
+  --test    Run the smoke test (app must already be running)
+  -h, --help
+EOF
+}
+
+MODE=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --deps)       MODE="deps"  ;;
+        --test)       MODE="test"  ;;
+        -h|--help)    usage; exit 0 ;;
+        *)
+            echo "Unknown option: $1" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+    shift
+done
+
+case "${MODE:-}" in
+    deps)  _deps  ;;
+    test)  _test  ;;
+    *)
+        echo "No target specified." >&2
+        usage >&2
+        exit 1
+        ;;
+esac

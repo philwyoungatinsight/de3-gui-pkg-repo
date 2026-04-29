@@ -1,0 +1,318 @@
+de3-gui-pkg:
+  _provides_capability:
+  - de3-gui-pkg: 0.8.0
+
+  # ---------------------------------------------------------------------------
+  # App config
+  # ---------------------------------------------------------------------------
+  config:
+    # Application title shown in the top-left navbar.
+    # Change to any string; defaults to "D.E. GUI" if absent.
+    app_title: "D.E. GUI"
+
+    # IP address of the machine running the GUI.
+    # "localhost" when running locally; set to the VM IP when deployed remotely.
+    vm_ip: "localhost"
+
+    # Ports for the Reflex frontend (Next.js) and backend (FastAPI).
+    # frontend_port: browser-facing HTTP port (Reflex/Next.js default: 3000; we use 9080).
+    # backend_port:  WebSocket/API port used internally by the frontend (Reflex default: 8000; we use 9000).
+    # Change both if the defaults conflict with other services on the host.
+    frontend_port: 9080
+    backend_port: 9000
+
+    # infra_path: optional path to infra/ relative to _STACK_DIR (default: infra/)
+    # ansible_inventory_path: explicit override for the inventory file (relative to _STACK_DIR or
+    #   absolute). Leave unset to auto-resolve from framework.yaml:
+    #   framework.ansible_inventory.output_file, anchored to $_DYNAMIC_DIR (same as the generator).
+    # ansible_inventory_path: ""
+    # stack_config_path: override path to framework.yaml, relative to _STACK_DIR or absolute.
+    #   Auto-detected (config/framework.yaml under _STACK_DIR) if absent; only needed if
+    #   auto-detection fails.
+    #   Example: stack_config_path: "config/framework.yaml"
+
+    # ansible_inventory_refresh:
+    #   enabled: run the update script when the GUI starts so the inventory is fresh.
+    #   script:  path to the script that regenerates the inventory file, relative to
+    #            _STACK_DIR or absolute.  The script is run in its own directory.
+    #            Leave empty to disable even when enabled: true.
+    #   args:    optional list (or space-separated string) of arguments to pass to the script.
+    ansible_inventory_refresh:
+      enabled: true
+      script: "framework/generate-ansible-inventory/run"
+      args: ["-b"]
+
+    # wave_recent_highlight_secs: a wave row is highlighted when its log file was
+    # modified within this many seconds.  Default: 30.
+    wave_recent_highlight_secs: 30
+
+    # wave_poll_interval_ms: how often (in milliseconds) the browser polls for
+    # wave log status updates while a run is active.  Default: 10000 (10 s).
+    wave_poll_interval_ms: 2000
+
+    # refactor_auto_preview: automatically run Preview when the destination is set.
+    #   true  — trigger immediately on node-click; debounce after typing.
+    # refactor_auto_preview_delay_ms: debounce delay after typing (default: 2000 ms).
+    refactor_auto_preview: true
+    refactor_auto_preview_delay_ms: 2000
+
+    # wave_tail_cmd: command run in the terminal when "Tail wave log" is clicked.
+    # Leave blank to disable the button.
+    wave_tail_cmd: tail -99f "$_WAVE_LOGS_DIR/latest/run.log"
+
+    # fw_repos_zoom_max: maximum zoom level (%) for the fw-repos Mermaid diagram.
+    # The slider and scroll-wheel zoom are both clamped to this value.
+    fw_repos_zoom_max: 1600
+
+  # ---------------------------------------------------------------------------
+  # Supported canvas views and providers
+  # ---------------------------------------------------------------------------
+  supported:
+    canvas:
+      - tree
+      - c4-static-structure
+      - c4-component-diagram
+    providers:
+      - provider-name: proxmox
+        order-in-list: 1
+        show: true
+        provider-doc-url: https://registry.terraform.io/providers/bpg/proxmox/latest/docs
+      - provider-name: maas
+        order-in-list: 2
+        show: true
+        provider-doc-url: https://registry.terraform.io/providers/canonical/maas/latest/docs
+      - provider-name: unifi
+        order-in-list: 3
+        show: true
+        provider-doc-url: https://registry.terraform.io/providers/paultyng/unifi/latest/docs
+      - provider-name: gcp
+        order-in-list: 4
+        show: true
+        provider-doc-url: https://registry.terraform.io/providers/hashicorp/google/latest/docs
+      - provider-name: aws
+        order-in-list: 5
+        show: true
+        provider-doc-url: https://registry.terraform.io/providers/hashicorp/aws/latest/docs
+      - provider-name: azure
+        order-in-list: 6
+        show: true
+        provider-doc-url: https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs
+      - provider-name: "null"
+        order-in-list: 7
+        show: false
+        provider-doc-url: https://registry.terraform.io/providers/hashicorp/null/latest/docs
+
+  # ---------------------------------------------------------------------------
+  # File viewer
+  # ---------------------------------------------------------------------------
+  file_viewer:
+    # When true, node paths auto-populated into the config-data search bar are wrapped
+    # in double-quotes (e.g. "gcp-pkg/_stack/gcp/us-central1/dev/bucket").  Set to false (default)
+    # to search without quotes.  Can also be toggled per-session via the UI button.
+    config_data_quote_path: false
+
+    # Editors available in the "Edit" dropdown on the file viewer menu bar.
+    # type: embedded       — open the file in the inline Monaco editor
+    # type: background_cmd — launch in the background (e.g. VS Code)
+    # type: terminal_cmd   — open the bottom-right terminal and run the command
+    # {file_path} is substituted with the absolute path to the viewed file.
+    editors:
+      - id: embedded-editor
+        label: "Embedded Editor"
+        type: embedded
+      - id: vscode
+        label: "VS Code"
+        type: background_cmd
+        cmd: "code {file_path}"
+      - id: pycharm
+        label: "PyCharm"
+        type: background_cmd
+        cmd: "pycharm {file_path}"
+      - id: nvim
+        label: "nvim"
+        type: terminal_cmd
+        cmd: "nvim {file_path}"
+      - id: nano
+        label: "nano"
+        type: terminal_cmd
+        cmd: "nano {file_path}"
+      - id: hx
+        label: "Helix"
+        type: terminal_cmd
+        cmd: "hx {file_path}"
+
+  # ---------------------------------------------------------------------------
+  # Unit-params display
+  # ---------------------------------------------------------------------------
+  unit_params:
+    # Identity params are shown first (in this order) with distinct colours.
+    # Add or reorder entries here — no code changes needed.
+    identity_params:
+      - _provider
+      - _region
+      - _env
+
+  # ---------------------------------------------------------------------------
+  # Default UI options (applied on first load / when state is absent)
+  # ---------------------------------------------------------------------------
+  options:
+    canvas: tree
+    providers:
+      - provider-name: proxmox
+        show: true
+      - provider-name: maas
+        show: true
+      - provider-name: unifi
+        show: true
+      - provider-name: gcp
+        show: true
+      - provider-name: aws
+        show: true
+      - provider-name: azure
+        show: true
+      - provider-name: "null"
+        show: false
+
+  # ---------------------------------------------------------------------------
+  # Test / browser automation settings
+  # ---------------------------------------------------------------------------
+  testing:
+    ui_testing:
+      # Run browser in headless mode (no visible window).
+      # Set to false for interactive/debugging sessions.
+      headless: false
+
+      # Email of the Google account whose Chrome profile to use.
+      # Leave empty to launch without a specific profile.
+      # Only used when headless: false.
+      user: ""
+      #user: "phil.wills.young@gmail.com"
+
+      # Open browser in incognito mode (clean session, no stored state).
+      # Ignored when user is set.
+      incognito: false
+
+      # Observation mode: none | timer | interactive
+      #   none        — browser closes immediately after checks
+      #   timer       — pause for observation_timeout_secs seconds, then close
+      #   interactive — inject a "Continue" button; wait for click, Enter, or timeout
+      observation_mode: "interactive"
+
+      # Seconds for timer mode (fixed sleep) and interactive mode (max wait).
+      # Set to 0 in interactive mode to wait indefinitely.
+      observation_timeout_secs: 10
+
+      # Seconds to pause after clicking "Continue" before proceeding.
+      post_continue_pause_secs: 1
+
+      # Colors used for the test overlay and control panel.
+      # tint_*: full CSS color for the full-viewport overlay (use rgba for transparency).
+      # btn_*:  background color for the floating control panel button.
+      colors:
+        # Window tint while waiting (both observation gates, and before checks run).
+        tint_waiting: "rgba(220,180,0,0.14)"
+        # Window tint when one or more checks fail.
+        tint_fail: "rgba(200,30,30,0.18)"
+        # Control panel while checks are running (in progress).
+        btn_running: "#ca8a04"
+        # Control panel at the final gate when all checks passed.
+        btn_pass: "#16a34a"
+        # Control panel at the final gate when checks failed.
+        btn_fail: "#dc2626"
+
+        # ── Alternatives (uncomment to try) ───────────────────────────────
+        # Stronger tints:
+        #tint_waiting: "rgba(220,180,0,0.25)"
+        #tint_fail: "rgba(200,30,30,0.30)"
+        #
+        # Blue "in progress" instead of amber:
+        #btn_running: "#0369a1"
+        #tint_waiting: "rgba(0,120,220,0.12)"
+        #
+        # Subtle grey tint instead of yellow while waiting:
+        #tint_waiting: "rgba(100,100,100,0.10)"
+
+  # ---------------------------------------------------------------------------
+  # Provider context-menu actions
+  # ---------------------------------------------------------------------------
+  provider_actions:
+    # ── Group labels shown as context menu section headers ──────────────────
+    group_labels:
+      shell:    "Shell"
+      provider: "Provider UI"
+      misc:     "Misc"
+
+    # ── Action definitions ──────────────────────────────────────────────────
+    # Fields:
+    #   id:                   unique string; used as data-action-id HTML attribute
+    #   label:                menu item text
+    #   group:                shell | provider | unit | misc
+    #   action_type:          clipboard | url | expand_collapse
+    #   url_template:         for action_type=url   — {param_name} placeholders
+    #   command_template:     for action_type=clipboard — {param_name} placeholders
+    #   params:               required param names; action is skipped if any are absent
+    #   param_defaults:       fallback values (lower priority than resolved stack params)
+    #   provider:             (optional) restrict to this provider name
+    #   node_type:            (optional) restrict to this node type
+    #   node_path_contains:   (optional) only show when this substring is in the path
+    #   requires_role:        (optional) only show when node has this tag in additional_tags
+    #   requires_terragrunt:  (optional) only show when node has terragrunt.hcl
+    #
+    # Synthetic params always available (injected at resolution time, no YAML needed):
+    #   {node_path}   — the node's full path, e.g. proxmox-pkg/_stack/proxmox/pwy-homelab/pve-nodes/pve-1
+    #   {infra_root}  — absolute path to the infra/ directory root
+
+    actions:
+
+      # ── proxmox : pve-node ────────────────────────────────────────────────
+      - id: proxmox_ui
+        label: "Proxmox UI"
+        group: provider
+        action_type: url
+        url_template: "https://{ansible_host}:{proxmox_api_port}"
+        params: [ansible_host, proxmox_api_port]
+        param_defaults:
+          proxmox_api_port: "8006"
+        provider: proxmox
+        node_type: pve-node
+
+      # ── proxmox : vm ──────────────────────────────────────────────────────
+      - id: mesh_central_ui
+        label: "MeshCentral UI"
+        group: provider
+        action_type: url
+        url_template: "https://{ansible_host}"
+        params: [ansible_host]
+        provider: proxmox
+        node_type: vm
+        requires_role: role_mesh_central
+        auth:
+          scheme: form
+          credential_path: "pwy-home-lab-pkg/_stack/null/pwy-homelab/mesh-central/configure-server"
+          username_param: admin_username
+          password_param: admin_password
+          username_selector: "#username"
+          password_selector: "#password"
+          submit_selector: "#loginButton"
+
+      - id: amt_ui
+        label: "AMT Web UI"
+        group: provider
+        action_type: url
+        url_template: "https://{power_address}:{amt_port}"
+        params: [power_address, amt_port]
+        param_defaults:
+          amt_port: "16993"
+        provider: maas
+        node_type: machine
+        auth:
+          scheme: digest
+          username_param: power_user
+          password_param: power_pass
+
+      # ── ALL nodes : misc ──────────────────────────────────────────────────
+      - id: expand_collapse
+        label: "Expand / Collapse"
+        group: misc
+        action_type: expand_collapse
+        params: []

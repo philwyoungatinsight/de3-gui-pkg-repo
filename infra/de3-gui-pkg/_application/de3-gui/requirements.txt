@@ -1,0 +1,4 @@
+reflex>=0.6.0
+pyyaml>=6.0
+reflex-monaco>=0.0.3
+drawpyo>=0.2.5
