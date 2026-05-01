@@ -4,19 +4,31 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Save the caller's _GIT_ROOT before sourcing set_env.sh overwrites it.
-# When this script is run from a deployment repo that sourced its own set_env.sh first,
-# _GIT_ROOT is that deployment repo's root.  After `. set_env.sh` below it becomes
-# this script's physical git root (de3-runner), so we must capture it first.
-_CALLER_GIT_ROOT="${_GIT_ROOT:-}"
-
-# Source repo-level set_env.sh (sets _GIT_ROOT, _INFRA_DIR, _DYNAMIC_DIR, etc.)
-GIT_ROOT="$(git rev-parse --show-toplevel)"
+# Source repo-level set_env.sh (sets _GIT_ROOT, _INFRA_DIR, _DYNAMIC_DIR, etc.).
+# This script may live inside an embedded package repo whose git root differs from
+# the deployment repo that owns set_env.sh.  Strategy:
+#   1. If _GIT_ROOT is already set (caller sourced set_env.sh), reuse it.
+#   2. Otherwise walk up SCRIPT_DIR physically (ignore git) until set_env.sh is found.
+# Never use `git rev-parse --show-toplevel` — it returns the package repo root, not
+# the deployment repo root, when this script lives in an embedded package checkout.
+if [[ -n "${_GIT_ROOT:-}" && -f "$_GIT_ROOT/set_env.sh" ]]; then
+    GIT_ROOT="$_GIT_ROOT"
+else
+    _walk="$SCRIPT_DIR"
+    while [[ "$_walk" != "/" ]]; do
+        if [[ -f "$_walk/set_env.sh" ]]; then
+            GIT_ROOT="$_walk"
+            break
+        fi
+        _walk="$(dirname "$_walk")"
+    done
+    [[ -n "${GIT_ROOT:-}" ]] || { echo "[de3-gui] ERROR: could not find set_env.sh walking up from $SCRIPT_DIR" >&2; exit 1; }
+    unset _walk
+fi
 . "$GIT_ROOT/set_env.sh"
 
 # _STACK_DIR = deployment repo root (the repo whose state file the GUI should read).
-# Use the caller's git root if it was already set; fall back to this script's git root.
-export _STACK_DIR="${_CALLER_GIT_ROOT:-$_GIT_ROOT}"
+export _STACK_DIR="$_GIT_ROOT"
 
 # Package config under _INFRA_DIR.
 PKG_CONFIG_FILE="$_CONFIG_DIR/de3-gui-pkg.yaml"
