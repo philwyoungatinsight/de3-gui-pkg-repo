@@ -28,7 +28,7 @@ fi
 . "$GIT_ROOT/set_env.sh"
 
 # _STACK_DIR = deployment repo root (the repo whose state file the GUI should read).
-export _STACK_DIR="$_GIT_ROOT"
+export _STACK_DIR="$GIT_ROOT"
 
 # Package config under _INFRA_DIR.
 PKG_CONFIG_FILE="$_CONFIG_DIR/de3-gui-pkg.yaml"
