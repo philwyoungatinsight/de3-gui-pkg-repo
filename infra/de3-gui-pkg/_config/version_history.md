@@ -1,5 +1,8 @@
 # de3-gui-pkg version history
 
+## 0.8.1  (2026-05-18, git: f2c9f59)
+- fix: tabbed mode resizer — add id="main-panels" to outer hstack so JS can compute container width on drag
+
 ## 0.8.0  (2026-04-28, git: 992ef04)
 - appearance menu: replace "Floating panels mode" checkbox with `Mode:` dropdown (4-panels / Floating Panels / Tabbed Panels)
 - new Tabbed Panels layout: infra-tree sidebar + draggable resizer + tab column (Object Viewer, File Viewer, Terminal)
