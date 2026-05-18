@@ -18340,6 +18340,7 @@ def tabbed_panels_layout() -> rx.Component:
         height="100%",
         overflow="hidden",
         align="start",
+        id="main-panels",
     )
 
 
