@@ -157,17 +157,31 @@ _build() {
     _log "Build complete."
 }
 
+# Returns true (exit 0) if something is listening on the given port at the kernel level.
+# Uses ss (reads /proc/net/tcp directly) so it detects root-owned sockets that lsof misses.
+_port_listening() {
+    ss -tlnH 2>/dev/null | grep -qE ":${1}[[:space:]]"
+}
+
 _stop() {
     _log "Stopping any running Home Lab GUI instances (ports ${APP_PORT} and ${BACKEND_PORT})..."
     # Gracefully terminate the reflex parent (children die with it)
     pkill -TERM -f "reflex run" 2>/dev/null || true
     sleep 2
-    # Force-kill anything still holding either port
+    # Force-kill anything still holding either port (lsof works for user-owned processes)
     for _port in "${APP_PORT}" "${BACKEND_PORT}"; do
         _pids=$(lsof -ti "tcp:${_port}" 2>/dev/null || true)
         if [[ -n "${_pids}" ]]; then
             _log "Force-killing PID(s) still on port ${_port}: $(echo "${_pids}" | tr '\n' ' ')"
             echo "${_pids}" | xargs kill -9 2>/dev/null || true
+        fi
+    done
+    # Warn about privileged sockets we can't kill (e.g. docker-proxy running as root)
+    for _port in "${APP_PORT}" "${BACKEND_PORT}"; do
+        if _port_listening "${_port}"; then
+            _log "WARNING: port ${_port} is still held by a privileged process (e.g. docker-proxy)."
+            _log "         It cannot be killed without root. Set port_conflict_strategy: select_next_available_port"
+            _log "         in de3-gui-pkg.yaml to start the GUI on a free port instead."
         fi
     done
     # Remove the cross-process test-state marker so stale markers don't suppress
@@ -178,7 +192,8 @@ _stop() {
 
 _find_free_port() {
     local port="$1"
-    while lsof -ti "tcp:${port}" &>/dev/null 2>&1; do
+    # Use ss (kernel-level) to detect listening sockets, including root-owned (e.g. docker-proxy)
+    while _port_listening "${port}"; do
         port=$(( port + 1 ))
     done
     echo "$port"

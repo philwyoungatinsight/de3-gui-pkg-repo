@@ -1,5 +1,8 @@
 # de3-gui-pkg version history
 
+## 0.8.4  (2026-05-19, git: TBD)
+- fix: use ss instead of lsof for port-occupancy detection so docker-proxy/root-owned sockets are found; warn on unkillable ports; _find_free_port now skips docker-proxied ports
+
 ## 0.8.3  (2026-05-19, git: afdbf54)
 - feat: config-driven port conflict strategy — fail_with_error / kill_process_using_port (default) / select_next_available_port
 
