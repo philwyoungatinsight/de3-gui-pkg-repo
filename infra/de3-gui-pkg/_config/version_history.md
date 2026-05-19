@@ -1,6 +1,6 @@
 # de3-gui-pkg version history
 
-## 0.8.5  (2026-05-19, git: TBD)
+## 0.8.5  (2026-05-19, git: f880b91)
 - config: change default backend_port from 9000 to 9002 (avoids conflict with MinIO docker-proxy)
 
 ## 0.8.4  (2026-05-19, git: 0ca14ac)
