@@ -1,6 +1,6 @@
 # de3-gui-pkg version history
 
-## 0.8.3  (2026-05-19, git: TBD)
+## 0.8.3  (2026-05-19, git: afdbf54)
 - feat: config-driven port conflict strategy — fail_with_error / kill_process_using_port (default) / select_next_available_port
 
 ## 0.8.2  (2026-05-18, git: a5f245c)
