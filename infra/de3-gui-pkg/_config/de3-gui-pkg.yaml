@@ -1,6 +1,6 @@
 de3-gui-pkg:
   _provides_capability:
-  - de3-gui-pkg: 0.8.2
+  - de3-gui-pkg: 0.8.3
 
   # ---------------------------------------------------------------------------
   # App config
@@ -8,7 +8,7 @@ de3-gui-pkg:
   config:
     # Application title shown in the top-left navbar.
     # Change to any string; defaults to "D.E. GUI" if absent.
-    app_title: "D.E. GUI"
+    app_title: "DE3 GUI"
 
     # IP address of the machine running the GUI.
     # "localhost" when running locally; set to the VM IP when deployed remotely.
@@ -20,6 +20,12 @@ de3-gui-pkg:
     # Change both if the defaults conflict with other services on the host.
     frontend_port: 9080
     backend_port: 9000
+
+    # port_conflict_strategy: what to do when a configured port is already in use at startup.
+    #   fail_with_error           — do nothing; let Reflex report the error and exit
+    #   kill_process_using_port   — kill any process holding either port before starting (default)
+    #   select_next_available_port — increment each occupied port until a free one is found
+    port_conflict_strategy: kill_process_using_port
 
     # infra_path: optional path to infra/ relative to _STACK_DIR (default: infra/)
     # ansible_inventory_path: explicit override for the inventory file (relative to _STACK_DIR or

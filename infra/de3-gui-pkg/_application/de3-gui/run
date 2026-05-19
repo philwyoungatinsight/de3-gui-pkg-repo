@@ -105,6 +105,7 @@ BACKEND_PORT=$(_read_config "config.backend_port" "9000")
 # Export so rxconfig.py can read them via os.environ.
 export HOMELAB_GUI_FRONTEND_PORT="$APP_PORT"
 export HOMELAB_GUI_BACKEND_PORT="$BACKEND_PORT"
+PORT_CONFLICT_STRATEGY=$(_read_config "config.port_conflict_strategy" "kill_process_using_port")
 
 # Find a usable browser binary (Chrome/Chromium first, then system defaults).
 _find_browser() {
@@ -175,11 +176,48 @@ _stop() {
     _log "Stop complete."
 }
 
+_find_free_port() {
+    local port="$1"
+    while lsof -ti "tcp:${port}" &>/dev/null 2>&1; do
+        port=$(( port + 1 ))
+    done
+    echo "$port"
+}
+
+_select_next_available_ports() {
+    local orig_frontend="$APP_PORT"
+    local orig_backend="$BACKEND_PORT"
+    APP_PORT=$(_find_free_port "$APP_PORT")
+    BACKEND_PORT=$(_find_free_port "$BACKEND_PORT")
+    export HOMELAB_GUI_FRONTEND_PORT="$APP_PORT"
+    export HOMELAB_GUI_BACKEND_PORT="$BACKEND_PORT"
+    if [[ "$APP_PORT" != "$orig_frontend" || "$BACKEND_PORT" != "$orig_backend" ]]; then
+        _log "Ports remapped: frontend ${orig_frontend}→${APP_PORT}, backend ${orig_backend}→${BACKEND_PORT}"
+        _log "App will be at http://localhost:${APP_PORT}"
+    fi
+}
+
+_handle_port_conflict() {
+    case "$PORT_CONFLICT_STRATEGY" in
+        fail_with_error)
+            ;;
+        kill_process_using_port)
+            _stop
+            ;;
+        select_next_available_port)
+            _select_next_available_ports
+            ;;
+        *)
+            _die "Unknown port_conflict_strategy: '${PORT_CONFLICT_STRATEGY}'. Valid values: fail_with_error, kill_process_using_port, select_next_available_port"
+            ;;
+    esac
+}
+
 _run() {
     _log "Starting Home Lab GUI at http://localhost:${APP_PORT} ..."
     _check_python
     _check_node
-    _stop
+    _handle_port_conflict
     cd "$SCRIPT_DIR"
     # Exclude tests/ from hot-reload watching so editing test files doesn't
     # trigger a backend restart while a test run is in progress.
