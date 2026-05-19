@@ -6359,6 +6359,10 @@ class AppState(rx.State):
         if self.object_viewer_mode == "waves":
             self.refresh_wave_log_statuses()
             scripts.append(rx.call_script(self._WAVE_POLL_START_JS))
+        global _FW_REPOS_STARTUP_REFRESH_DONE
+        if not _FW_REPOS_STARTUP_REFRESH_DONE and _fw_repos_needs_refresh():
+            _FW_REPOS_STARTUP_REFRESH_DONE = True
+            scripts.append(AppState.startup_fw_repos_refresh)
         q = self._active_file_search
         if q and self.hcl_content:
             if self.selected_node_path and self.file_viewer_mode == "config_data":
@@ -10726,6 +10730,25 @@ class AppState(rx.State):
     # ── Framework Repos event handlers ──────────────────────────────────────
 
     @rx.event(background=True)
+    async def startup_fw_repos_refresh(self):
+        """Auto-refresh fw-repos cache on startup when stale. Called once per process."""
+        async with self:
+            self.fw_repos_refreshing = True
+        if _FW_REPOS_VIZ_BIN.exists():
+            # --list with auto_refresh_on_render:true lets the exporter decide whether
+            # a full clone-and-scan is needed; if the cache is already fresh it exits fast.
+            subprocess.run([str(_FW_REPOS_VIZ_BIN), "--list"], capture_output=True)
+        async with self:
+            if _FW_REPOS_YAML.exists():
+                _fw_raw = yaml.safe_load(_FW_REPOS_YAML.read_text()) or {}
+                self.framework_repos_data = _fw_raw.get("data", {}).get("repos", {})
+            self.fw_repos_refreshing = False
+        yield rx.call_script(
+            "var f=document.querySelector('iframe[src*=\"fw_repos\"]');"
+            "if(f && f.contentWindow && f.contentWindow.load) f.contentWindow.load();"
+        )
+
+    @rx.event(background=True)
     async def refresh_fw_repos_data(self):
         async with self:
             self.fw_repos_refreshing = True
@@ -11431,6 +11454,32 @@ def _get_hcl_providers_for_merged(merged_path: str) -> list[str]:
 _INVENTORY_HOSTS_CACHE: dict[str, dict] | None = None
 _INVENTORY_REFRESH_DONE: bool = False      # run at most once per process lifetime
 _INVENTORY_REFRESH_COMPLETE: bool = False  # set True after the refresh script exits
+
+_FW_REPOS_STARTUP_REFRESH_DONE: bool = False  # trigger at most once per process lifetime
+
+
+def _fw_repos_needs_refresh() -> bool:
+    """Return True if known-fw-repos.yaml is missing or any framework_*.yaml is newer than last-refresh."""
+    if not _FW_REPOS_YAML.exists():
+        return True
+    last_refresh = _FW_REPOS_YAML.parent / "last-refresh"
+    if not last_refresh.exists():
+        return True
+    last_ts = last_refresh.stat().st_mtime
+    # Mirror the 3-tier lookup the exporter uses: config/ override, main-pkg, framework-pkg
+    candidates: list[Path] = [_STACK_DIR / "config"]
+    main_pkg = os.environ.get("_MAIN_PKG_DIR", "")
+    if main_pkg:
+        candidates.append(Path(main_pkg) / "_config" / "_framework_settings")
+    fw_pkg = os.environ.get("_FRAMEWORK_PKG_DIR", "")
+    if fw_pkg:
+        candidates.append(Path(fw_pkg) / "_config" / "_framework_settings")
+    for d in candidates:
+        if d.is_dir():
+            for f in d.glob("framework_*.yaml"):
+                if f.stat().st_mtime > last_ts:
+                    return True
+    return False
 
 # Local state watcher — polls .terragrunt-cache for recently-changed terraform.tfstate files.
 _LOCAL_STATE_WATCHER_RUNNING: bool = False          # process-level singleton guard
