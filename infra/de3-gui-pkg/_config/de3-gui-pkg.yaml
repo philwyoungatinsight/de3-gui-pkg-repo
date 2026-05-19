@@ -1,6 +1,6 @@
 de3-gui-pkg:
   _provides_capability:
-  - de3-gui-pkg: 0.8.4
+  - de3-gui-pkg: 0.8.5
 
   # ---------------------------------------------------------------------------
   # App config
@@ -16,10 +16,10 @@ de3-gui-pkg:
 
     # Ports for the Reflex frontend (Next.js) and backend (FastAPI).
     # frontend_port: browser-facing HTTP port (Reflex/Next.js default: 3000; we use 9080).
-    # backend_port:  WebSocket/API port used internally by the frontend (Reflex default: 8000; we use 9000).
+    # backend_port:  WebSocket/API port used internally by the frontend (Reflex default: 8000; we use 9002).
     # Change both if the defaults conflict with other services on the host.
     frontend_port: 9080
-    backend_port: 9000
+    backend_port: 9002
 
     # port_conflict_strategy: what to do when a configured port is already in use at startup.
     #   fail_with_error           — do nothing; let Reflex report the error and exit
