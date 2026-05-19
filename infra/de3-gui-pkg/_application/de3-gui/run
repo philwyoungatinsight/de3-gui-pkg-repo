@@ -179,6 +179,7 @@ _run() {
     _log "Starting Home Lab GUI at http://localhost:${APP_PORT} ..."
     _check_python
     _check_node
+    _stop
     cd "$SCRIPT_DIR"
     # Exclude tests/ from hot-reload watching so editing test files doesn't
     # trigger a backend restart while a test run is in progress.

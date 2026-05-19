@@ -1,5 +1,8 @@
 # de3-gui-pkg version history
 
+## 0.8.2  (2026-05-18, git: TBD)
+- fix: kill port-holding processes before starting GUI to prevent address-in-use errors
+
 ## 0.8.1  (2026-05-18, git: f2c9f59)
 - fix: tabbed mode resizer — add id="main-panels" to outer hstack so JS can compute container width on drag
 
