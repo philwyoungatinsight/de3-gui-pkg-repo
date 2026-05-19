@@ -1,6 +1,6 @@
 # de3-gui-pkg version history
 
-## 0.8.6  (2026-05-19, git: TBD)
+## 0.8.6  (2026-05-19, git: 9810783)
 - feat: auto-refresh fw-repos cache on GUI startup when stale (via startup_fw_repos_refresh background task)
 
 ## 0.8.5  (2026-05-19, git: f880b91)
