@@ -1,2 +1,7 @@
 _framework:
   main_package: de3-gui-pkg
+  labels:
+    - name: _purpose
+      value: Web-based GUI for visualising and operating the home-lab infrastructure DAG
+    - name: _docs
+      value: https://github.com/philwyoungatinsight/de3-gui-pkg-repo
